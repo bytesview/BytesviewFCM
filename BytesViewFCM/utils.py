@@ -16,11 +16,11 @@ def notification_queue(queue_name:str, host:str='localhost', port:int=6379, db:i
 
 
 
-def send_notification(credential, messages):
+def send_notification(app_name, credential, messages):
     
     if len(messages) == 1:
-        FCMClient().fcm_send(credential=credential, message=messages[0])
+        FCMClient().fcm_send(app_name=app_name, credential=credential, message=messages[0])
     else:
         for batch_of_message in [messages[i:i+500] for i in range(0, len(messages), 500)]:
-            FCMClient().fcm_bulk_send(credential=credential, batch_of_message=batch_of_message)
+            FCMClient().fcm_bulk_send(app_name=app_name, credential=credential, batch_of_message=batch_of_message)
 

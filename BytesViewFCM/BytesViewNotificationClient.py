@@ -44,10 +44,10 @@ class BytesViewNotificationClient(FCMClient):
     def send_immediate(self, app_name, messages:list):
         try:
             if len(messages) == 1:
-                FCMClient.fcm_send(self, credential=BytesViewNotificationClient._credential[app_name], message=messages[0])
+                FCMClient.fcm_send(self, app_name=app_name, credential=BytesViewNotificationClient._credential[app_name], message=messages[0])
             else:
                 for batch_of_message in [messages[i:i+500] for i in range(0, len(messages), 500)]:
-                    FCMClient.fcm_bulk_send(self, credential=BytesViewNotificationClient._credential[app_name], batch_of_message=batch_of_message)
+                    FCMClient.fcm_bulk_send(self, app_name=app_name, credential=BytesViewNotificationClient._credential[app_name], batch_of_message=batch_of_message)
             return {'status':'success'}
         except Exception as e:
             return e
@@ -56,7 +56,7 @@ class BytesViewNotificationClient(FCMClient):
     def enqueue_messages(self, app_name, messages:list):
         try:
             if BytesViewNotificationClient._queue_instance:
-                BytesViewNotificationClient._queue_instance.enqueue(send_notification,args=(BytesViewNotificationClient._credential[app_name],messages,), result_ttl=self.result_ttl, ttl=self.ttl, failure_ttl=self.failure_ttl) 
+                BytesViewNotificationClient._queue_instance.enqueue(send_notification,args=(app_name, BytesViewNotificationClient._credential[app_name],messages,), result_ttl=self.result_ttl, ttl=self.ttl, failure_ttl=self.failure_ttl) 
             else:
                 return('queue not configured')
             return {'status':'success'}
