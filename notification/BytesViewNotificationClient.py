@@ -1,5 +1,5 @@
 from notification.utils import notification_queue
-from FCMClient import FCMClient
+from notification.FCMClient import FCMClient
 from notification.utils import send_notification
 
 
