@@ -1,0 +1,35 @@
+# This workflow will upload a Python Package using Twine when a release is created
+# For more information see: https://help.github.com/en/actions/language-and-framework-guides/using-python-with-github-actions#publishing-to-package-registries
+
+name: Upload Python Package
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.8'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install setuptools wheel twine pytest
+        pip install -r requirements.txt
+    - name: Build and publish
+      env:
+        CREDENTIAL_PATH: ${{ secrets.PYTEST_CREDENTIAL_PATH }}
+        DEVICE_TOKEN: ${{ secrets.PYTEST_DEVICE_TOKEN }}
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TWINE_TOKEN }}
+      run: |
+        pytest
+        python setup.py sdist bdist_wheel
+        twine upload dist/*
