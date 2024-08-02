@@ -1,6 +1,6 @@
 from rq import Queue
 from redis import Redis
-from notification.FCMClient import FCMClient
+from BytesViewFCM.FCMClient import FCMClient
 
 
 def notification_queue(queue_name:str, host:str='localhost', port:int=6379, db:int=1, default_timeout:int=900):

@@ -1,7 +1,7 @@
 
 # <p align="center">BytesView Notification Client
 
-BytesView Notification Client is a centalized way of managing notifications using fcm and onesignal
+BytesView Notification Client is a centalized way of managing notifications using fcm
 
 <!-- [![Build Status](https://img.shields.io/github/actions/workflow/status/bytesview/python-client/python-publish.yml)](https://github.com/bytesview/python-client/actions/workflows/python-publish.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/newsdataapi/python-client/blob/main/LICENSE)
@@ -11,7 +11,8 @@ BytesView Notification Client is a centalized way of managing notifications usin
 
 ## Installation
 ```
-pip install Bytesview-Notification-Client
+pip install bytesviewnotifiactionclient
+
 ```
 
 ## Documentation

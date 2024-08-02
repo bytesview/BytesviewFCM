@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='bytesviewnotifiactionclient',
-    version='1.0.0',
+    version='1.0.1',
     packages=find_packages(),
     install_requires=[
         'firebase-admin','rq','redis',
