@@ -1,6 +1,6 @@
-from utils import notification_queue
+from notification.utils import notification_queue
 from FCMClient import FCMClient
-from utils import send_notification
+from notification.utils import send_notification
 
 
 
