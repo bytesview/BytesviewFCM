@@ -1,5 +1,5 @@
 import os,unittest
-from notification import BytesViewNotificationClient 
+from notification.BytesViewNotificationClient import BytesViewNotificationClient 
 
 class test_notificationclient(unittest.TestCase):
     def setUp(self):
