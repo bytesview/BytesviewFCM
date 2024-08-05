@@ -7,11 +7,11 @@ class FCMClient:
 
     _initialized_apps = {}
 
-    def create_fcm_message(self, device_token:str, body:str, image:str, data:dict):
+    def create_fcm_message(self, device_token:str, title:str, body:str, image:str, data:dict):
         return messaging.Message(
             token=device_token,
             notification=messaging.Notification(
-                body=body, image=image
+                title=title, body=body, image=image
             ),
             data=data
         )

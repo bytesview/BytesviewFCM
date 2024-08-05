@@ -34,9 +34,9 @@ class BytesViewNotificationClient(FCMClient):
             return e
 
 
-    def create_message(self, device_token: str, body: str, image: str, data: dict={}):
+    def create_message(self, device_token: str, title: str, body: str, image: str, data: dict={}):
         try:
-            return FCMClient.create_fcm_message(self, device_token, body, image, data)
+            return FCMClient.create_fcm_message(self, device_token, title, body, image, data)
         except Exception as e:
             return e
     
