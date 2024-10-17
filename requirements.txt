@@ -1,3 +1,5 @@
 firebase-admin
 rq
 redis
+onesignal-python-api
+mysql-connector-python
