@@ -57,10 +57,10 @@ class BytesViewNotificationClient:
         if database_config:
             BytesViewNotificationClient._database_config=database_config
 
-    def set_notification_queue(self, queue_name:str, host:str='localhost',password:str=None, port:int=6379, db:int=1, default_timeout:int=900,
+    def set_notification_queue(self, queue_name:str, redis_host:str='localhost',password:str=None, port:int=6379, db:int=1, default_timeout:int=900,
                          result_ttl:int=300, ttl:int=2400, failure_ttl:int=1296000):
         try:
-            BytesViewNotificationClient._queue_instance = notification_queue(queue_name=queue_name, host=host, port=port, db=db,password=password, default_timeout=default_timeout)
+            BytesViewNotificationClient._queue_instance = notification_queue(queue_name=queue_name, host=redis_host, port=port, db=db,password=password, default_timeout=default_timeout)
             self.result_ttl = result_ttl
             self.ttl = ttl
             self.failure_ttl = failure_ttl
