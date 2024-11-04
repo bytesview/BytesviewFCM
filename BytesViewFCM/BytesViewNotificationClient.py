@@ -5,6 +5,7 @@ from BytesViewFCM.NotificationTracker import NotificationTracker
 from firebase_admin import  messaging
 from typing import List
 from BytesViewFCM.notification_exception import RateLimitExceeded
+from BytesViewFCM.logger import logger
 from uuid import uuid4
 from time import time
 class BytesViewNotificationClient:
@@ -65,9 +66,11 @@ class BytesViewNotificationClient:
             self.ttl = ttl
             self.failure_ttl = failure_ttl
         except Exception as e:
+            logger.error(str(e))
             return e
     
     def _prepare_messages(self,messages:List[dict])->List:
+        logger.info("preparing messages to send notifications")
         processed_messages = []
         for index, message in enumerate(messages):
             missing_keys = [key for key in self.REQUIRED_KEYS if key not in message]
@@ -86,7 +89,8 @@ class BytesViewNotificationClient:
                                                                     image=message['image'] if message['image'] else message['big_picture'], 
                                                                     data=message['data'])
                     processed_messages.append(fcm_message)
-                except:
+                except Exception as e:
+                    logger.error(str(e))
                     continue
             else:
                 processed_messages.append({'player_id': message.get('onesignal_playerid'),
@@ -95,8 +99,10 @@ class BytesViewNotificationClient:
                                            'body': message['body'],
                                            'image': message['image'],
                                            'data': message.get('data'), 
-                                           'big_picture': message.get('big_picture')
+                                           'big_picture': message.get('big_picture'),
+                                           'android_channel_id':message.get('notification_channel')
                                         })
+        logger.info("messages prepared successful")
         return processed_messages
 
     def _send_notifications(self, app_name, messages:List[dict], fcm_credential, onesignal_credential, database_config:dict,update_invalid_tokens:bool=False):
@@ -106,9 +112,10 @@ class BytesViewNotificationClient:
                 raise ValueError('messages list must not contain more than 500 elements.')
             
             processed_messages=self._prepare_messages(messages=messages)
-
+           
             self.notif_tracker=NotificationTracker(database_config=database_config)
             self.notif_tracker.set_connection()
+            logger.info("started sending notifications")
             onesignal_list,fcm_list,invalid_token_list = [],[],[]
             for message in processed_messages:
                 if isinstance(message, messaging.Message):
@@ -122,8 +129,10 @@ class BytesViewNotificationClient:
                     if service_result and  service_result['failed']:
                         invalid_token_list.append(service_result['failed'])
                 except RateLimitExceeded:
+                    logger.error("Onesignal Rate Limit Exceeded")
                     self._fallback_to_fcm(onesignal_list, fcm_list)
-                except:
+                except Exception as e:
+                    logger.error(str(e))
                     raise
             if fcm_list:
                 service_result=self.fcm_client.fcm_bulk_send(
@@ -136,9 +145,10 @@ class BytesViewNotificationClient:
                     invalid_token_list.append(service_result['failed'])
             if invalid_token_list and update_invalid_tokens:
                 self.notif_tracker.update_invalid_device_tokens(invalid_tokens=invalid_token_list)
-            return {'status': 'success','time':time()-start}
-        except :
-            raise
+            logger.info(f" successfully send notifications in {time()-start} secs")
+            return {'status': 'success'}
+        except Exception as e:
+            logger.error(str(e))
         finally:
             self.notif_tracker.close_connection()
         
@@ -164,6 +174,8 @@ class BytesViewNotificationClient:
         """
         Method to convert Onesignal Message To Fcm Message
         """
+        logger.info("converting onesignal messages to fcm messages")
+
         for onesignal_message in onesignal_list:
             fcm_message = self.fcm_client.create_fcm_message(
                 device_token=onesignal_message['device_token'],
@@ -175,11 +187,23 @@ class BytesViewNotificationClient:
             fcm_list.append(fcm_message)
     
     def enqueue_messages(self,app_name,messages,update_invalid_tokens=False):
+        """
+         Parameters:
+            - app_name (str): application sending notification.
+            - messages (list of dict): for tracking notification data object required follwing keys:
+                        -'u_id': User ID of the notification recipient.
+                        -'device': Device Id
+                        -'category': Category ID for tracking purposes. Must be digit
+            Any missing keys will result in null values for those columns in tracking.
+            - update_invalid_tokens (bool, optional): Whether to update invalid tokens if found. 
+            Defaults to False.
+        """
         try:
             if BytesViewNotificationClient._queue_instance:
                 BytesViewNotificationClient._queue_instance.enqueue(self.send_notification_by_queue,args=(app_name,messages,BytesViewNotificationClient._fcm_credential[app_name],BytesViewNotificationClient._onesignal_credential[app_name],BytesViewNotificationClient._database_config,update_invalid_tokens), result_ttl=self.result_ttl, ttl=self.ttl, failure_ttl=self.failure_ttl) 
             else:
-                return('queue not configured')
+                raise ValueError("queue not configured")
             return {'status':'success'}
         except Exception as e:
-            return e
+            logger.error(str(e))
+            raise

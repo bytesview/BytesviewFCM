@@ -1,6 +1,7 @@
 import firebase_admin
 from firebase_admin import credentials, messaging
 import json
+from BytesViewFCM.logger import logger
 
 class FCMClient:
 
@@ -28,6 +29,7 @@ class FCMClient:
         service_response = messaging.send_each(batch_of_message, app=FCMClient._initialized_apps[app_name])
         for idx, resp in enumerate(service_response.responses):
                 if not resp.success :
+                    logger.info(f"Failed to send notification to {batch_of_message[idx].token} and the reason is:- {resp.exception}")
                     service_delivery_result['failed'].append({"data":batch_of_message[idx].data,"error":resp.exception.args[0],"code":resp.exception.code})
                 else:
                     service_delivery_result['notif_data'].append({"data":batch_of_message[idx].data})

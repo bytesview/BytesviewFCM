@@ -4,6 +4,7 @@ from onesignal.api import default_api
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from BytesViewFCM.notification_exception import  RateLimitExceeded
+from BytesViewFCM.logger import logger
 
 class OneSignalClient:
 
@@ -24,7 +25,8 @@ class OneSignalClient:
                     )
                     notification.large_icon = message.get('image', None)
                     notification.big_picture = message.get('big_picture', None)
-                    
+                    if message.get("android_channel_id"):
+                        notification.android_channel_id=message.get("android_channel_id")
                     response = api_instance.create_notification(notification)
                     
                     if 'errors' in response and 'invalid_player_ids' in response['errors']:
@@ -33,6 +35,7 @@ class OneSignalClient:
                     return {"data": message.get('data'), "status": "success"}
                 
                 except Exception as e:
+                    logger.error(f"failed to send notfication to {message.get('player_id')}")
                     if hasattr(e, 'status') and e.status == 429:
                         raise  RateLimitExceeded
                     elif hasattr(e, 'status') and e.status == 400:
