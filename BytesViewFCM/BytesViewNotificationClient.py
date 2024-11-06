@@ -204,7 +204,6 @@ class BytesViewNotificationClient:
                 raise ValueError('messages list must not contain more than 2000 elements.')
             if 'data' not in message:
                 message['data']={}
-            message['data']['uuid']=''.join(str(uuid4()).split('-'))
             onesignal_playerids,fcm_device_tokens=[],[]
             self.notif_tracker=NotificationTracker(database_config=database_config)
             self.notif_tracker.set_connection()
@@ -219,6 +218,7 @@ class BytesViewNotificationClient:
             invalid_onesignal_tokens=[]
             if onesignal_playerids:
                 try:
+                    message['data']['uuid']=''.join(str(uuid4()).split('-'))
                     invalid_onesignal_tokens=self.onesignal_client.send_multicast(credential=onesignal_credential,message=message,tokens=onesignal_playerids)
                     self.notif_tracker.log_multicast_notifications(message_data=message.get('data'),service_name='onesignal',
                                                                 total_notification=len(onesignal_playerids),
@@ -230,6 +230,7 @@ class BytesViewNotificationClient:
                     raise
             invalid_fcm_tokens=[]
             if fcm_device_tokens:
+                message['data']['uuid']=''.join(str(uuid4()).split('-'))
                 for i in range(0, len(fcm_device_tokens), 500):
                     fcm_message = self.fcm_client.create_multicast_message(
                         device_tokens= fcm_device_tokens[i:i + 500],
