@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='bytesviewnotifiactionclient',
-    version='1.1.1',
+    version='1.1.2',
     packages=find_packages(),
     install_requires=[
         'firebase-admin','rq','redis','onesignal-python-api','mysql-connector-python'
