@@ -22,7 +22,7 @@ class NotificationTracker:
     def close_connection(self):
         self.connection.close()
         
-    def append_notification(self,notification_data, data_obj, service_name, status,is_success):
+    def append_notification(self,notification_data, data_obj, service_name, status,is_success,total_notifications,failed_to_sent,total_clicks):
         """Append notification data to the list."""
         data = data_obj.get('data', {})
         notification_data.append((
@@ -32,18 +32,18 @@ class NotificationTracker:
             data.get('category'),
             service_name,
             status,
-            is_success
+            is_success,total_notifications,failed_to_sent,total_clicks
     ))
     def log_notifications(self, service_result):
         cursor = self.connection.cursor()
         notification_data = []
         for data_obj in service_result.get('notif_data', []):
-            self.append_notification(notification_data, data_obj, service_result.get('service', 'unknown'), "success",is_success=1)
+            self.append_notification(notification_data, data_obj, service_result.get('service', 'unknown'), "success",is_success=1,total_notifications=1,failed_to_sent=0,total_clicks=0)
         for data_obj in service_result.get('failed', []):
-            self.append_notification(notification_data, data_obj, service_result.get('service', 'unknown'), data_obj.get('error', "unknown"),is_success=0)
+            self.append_notification(notification_data, data_obj, service_result.get('service', 'unknown'), data_obj.get('error', "unknown"),is_success=0,total_notifications=1,failed_to_sent=1,total_clicks=0)
         try:
             cursor.executemany(f"""INSERT INTO {self.notification_log_table} (device_id, user_id, uuid, category_id, service_name, status,is_success,total_notifications,failed_to_sent,total_clicks)
-                                VALUES (%s, %s, %s, %s, %s, %s,%s,1,0,0)""", notification_data)
+                                VALUES (%s, %s, %s, %s, %s, %s,%s,%s,%s,%s)""", notification_data)
             self.connection.commit()
 
         except Error as e:
