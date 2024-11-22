@@ -15,6 +15,7 @@ class BytesViewNotificationClient:
     _fcm_credential = {}
     _onesignal_credential={}
     _database_config=None
+    redis_config={}
     REQUIRED_KEYS = {'device_token','title','body','image'}
 
     def __new__(cls, *args, **kwargs):
@@ -24,7 +25,7 @@ class BytesViewNotificationClient:
 
         return cls._instance
     
-    def __init__(self,fcm_credentials:List[dict],onesignal_credentials:List[dict]=None,database_config:dict=None):
+    def __init__(self,fcm_credentials:List[dict],onesignal_credentials:List[dict]=None,database_config:dict=None,redis_config=None):
         """
         Parameters:
         onesignal_credentials : List[dict], optional
@@ -47,7 +48,6 @@ class BytesViewNotificationClient:
         """
         self.fcm_client=FCMClient()
         self.onesignal_client=OneSignalClient()
-
         for cred in fcm_credentials:
             BytesViewNotificationClient._fcm_credential.update(cred)
 
@@ -57,15 +57,21 @@ class BytesViewNotificationClient:
 
         if database_config:
             BytesViewNotificationClient._database_config=database_config
-    def set_notification_queue(self, queue_name:str, redis_host:str='localhost',password:str=None, port:int=6379, db:int=1, default_timeout:int=900,
+            
+        self.redis_config=redis_config
+    def set_notification_queue(self, queue_name:str,default_timeout:int=900,
                          result_ttl:int=300, ttl:int=2400, failure_ttl:int=1296000):
         try:
-            BytesViewNotificationClient._queue_instance = notification_queue(queue_name=queue_name, host=redis_host, port=port, db=db,password=password, default_timeout=default_timeout)
+            BytesViewNotificationClient._queue_instance = notification_queue(queue_name=queue_name, host=self.redis_config.get('host'), 
+                                                                             port=self.redis_config.get('port',6379), 
+                                                                             db=self.redis_config.get('db',1),
+                                                                             password=self.redis_config.get('password',None), default_timeout=default_timeout
+                                                                             )
             self.result_ttl = result_ttl
             self.ttl = ttl
             self.failure_ttl = failure_ttl
-        except Exception as e:
-            return e
+        except:
+            raise
     
     def _prepare_messages(self,messages:List[dict])->List:
         processed_messages = []
@@ -78,7 +84,7 @@ class BytesViewNotificationClient:
                 message['data']={}
             message['data']['uuid']=''.join(str(uuid4()).split('-'))
 
-            if 'onesignal_playerid' not  in message:
+            if not message.get('onesignal_playerid',None):
                 try:
                     fcm_message=self.fcm_client.create_fcm_message(device_token=message['device_token'],
                                                                     title=message['title'], 
@@ -100,7 +106,7 @@ class BytesViewNotificationClient:
                                         })
         return processed_messages
 
-    def _send_notifications(self, app_name, messages:List[dict], fcm_credential, onesignal_credential, database_config:dict,update_invalid_tokens:bool=False):
+    def _send_notifications(self, app_name, messages:List[dict], fcm_credential, onesignal_credential, database_config:dict,redis_config,update_invalid_tokens:bool=False):
         try:
             start=time()
             if len(messages) > 500:
@@ -108,7 +114,7 @@ class BytesViewNotificationClient:
             
             processed_messages=self._prepare_messages(messages=messages)
            
-            self.notif_tracker=NotificationTracker(database_config=database_config)
+            self.notif_tracker=NotificationTracker(database_config=database_config,redis_config=redis_config)
             self.notif_tracker.set_connection()
             onesignal_list,fcm_list,invalid_token_list = [],[],[]
             for message in processed_messages:
@@ -149,15 +155,17 @@ class BytesViewNotificationClient:
                                         fcm_credential=BytesViewNotificationClient._fcm_credential[app_name],
                                         onesignal_credential=BytesViewNotificationClient._onesignal_credential[app_name],
                                         database_config=self._database_config,
+                                        redis_config=self.redis_config,
                                         update_invalid_tokens=update_invalid_tokens,
                                         )
        
-    def send_notification_by_queue(self,app_name,messages,fcm_credential,onesignal_credential,database_config,update_invalid_tokens=False):
+    def send_notification_by_queue(self,app_name,messages,fcm_credential,onesignal_credential,database_config,redis_config=None,update_invalid_tokens=False):
         return self._send_notifications(app_name=app_name,
                                         messages=messages,
                                         fcm_credential=fcm_credential,
                                         onesignal_credential=onesignal_credential,
                                         database_config=database_config,
+                                        redis_config=redis_config,
                                         update_invalid_tokens=update_invalid_tokens,
                                         )
 
@@ -190,14 +198,14 @@ class BytesViewNotificationClient:
         """
         try:
             if BytesViewNotificationClient._queue_instance:
-                BytesViewNotificationClient._queue_instance.enqueue(self.send_notification_by_queue,args=(app_name,messages,BytesViewNotificationClient._fcm_credential[app_name],BytesViewNotificationClient._onesignal_credential[app_name],BytesViewNotificationClient._database_config,update_invalid_tokens), result_ttl=self.result_ttl, ttl=self.ttl, failure_ttl=self.failure_ttl) 
+                BytesViewNotificationClient._queue_instance.enqueue(self.send_notification_by_queue,args=(app_name,messages,BytesViewNotificationClient._fcm_credential[app_name],BytesViewNotificationClient._onesignal_credential[app_name],BytesViewNotificationClient._database_config,BytesViewNotificationClient.redis_config,update_invalid_tokens), result_ttl=self.result_ttl, ttl=self.ttl, failure_ttl=self.failure_ttl) 
             else:
                 raise ValueError("queue not configured")
             return {'status':'success'}
         except Exception as e:
             raise
         
-    def _multicast_notification(self, app_name,tokens:list, message:dict, fcm_credential, onesignal_credential, database_config:dict,update_invalid_tokens:bool=False):
+    def _multicast_notification(self, app_name,tokens:list, message:dict, fcm_credential, onesignal_credential, database_config:dict,redis_config,update_invalid_tokens:bool=False):
         """method is useful when we want send same message to large audience"""
         try:
             if len(tokens)>2000:
@@ -205,7 +213,7 @@ class BytesViewNotificationClient:
             if 'data' not in message:
                 message['data']={}
             onesignal_playerids,fcm_device_tokens=[],[]
-            self.notif_tracker=NotificationTracker(database_config=database_config)
+            self.notif_tracker=NotificationTracker(database_config=database_config,redis_config=redis_config)
             self.notif_tracker.set_connection()
 
             for token in tokens:
@@ -245,7 +253,7 @@ class BytesViewNotificationClient:
                                                                total_notification=len(fcm_device_tokens),
                                                                failed_to_sent=len(invalid_fcm_tokens)            
                                                                 )
-            device_with_invalid_token = [token['device_id'] for token in tokens
+            device_with_invalid_token = [{token['user_id']:token['device_id']}for token in tokens
                                   if (token.get('onesignal_playerid') in invalid_onesignal_tokens) or
                                   (token.get('device_token') in invalid_fcm_tokens)
                                 ]   
@@ -264,16 +272,18 @@ class BytesViewNotificationClient:
                                         fcm_credential=BytesViewNotificationClient._fcm_credential[app_name],
                                         onesignal_credential=BytesViewNotificationClient._onesignal_credential[app_name],
                                         database_config=self._database_config,
+                                        redis_config=self.redis_config,
                                         update_invalid_tokens=update_invalid_tokens,
                                         )
        
-    def send_multicast_notification_by_queue(self,app_name,tokens,message,fcm_credential,onesignal_credential,database_config,update_invalid_tokens=False):
+    def send_multicast_notification_by_queue(self,app_name,tokens,message,fcm_credential,onesignal_credential,database_config,redis_config,update_invalid_tokens=False):
         return self._multicast_notification(app_name=app_name,
                                             tokens=tokens,
                                         message=message,
                                         fcm_credential=fcm_credential,
                                         onesignal_credential=onesignal_credential,
                                         database_config=database_config,
+                                        redis_config=redis_config,
                                         update_invalid_tokens=update_invalid_tokens,
                                         )
     
@@ -283,7 +293,8 @@ class BytesViewNotificationClient:
                 BytesViewNotificationClient._queue_instance.enqueue(self.send_multicast_notification_by_queue,
                                                                     args=(app_name,tokens,message,BytesViewNotificationClient._fcm_credential[app_name],
                                                                           BytesViewNotificationClient._onesignal_credential[app_name],
-                                                                          BytesViewNotificationClient._database_config,update_invalid_tokens,
+                                                                          BytesViewNotificationClient._database_config,BytesViewNotificationClient.redis_config,
+                                                                          update_invalid_tokens,
                                                                           ), 
                                                                     result_ttl=self.result_ttl, ttl=self.ttl, failure_ttl=self.failure_ttl
                                                                     ) 
