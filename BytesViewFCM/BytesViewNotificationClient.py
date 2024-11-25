@@ -15,7 +15,8 @@ class BytesViewNotificationClient:
     _fcm_credential = {}
     _onesignal_credential={}
     _database_config=None
-    redis_config={}
+    _redis_hash_config = {}
+    _queues = {}
     REQUIRED_KEYS = {'device_token','title','body','image'}
 
     def __new__(cls, *args, **kwargs):
@@ -25,7 +26,7 @@ class BytesViewNotificationClient:
 
         return cls._instance
     
-    def __init__(self,fcm_credentials:List[dict],onesignal_credentials:List[dict]=None,database_config:dict=None,redis_config=None):
+    def __init__(self,fcm_credentials:List[dict],onesignal_credentials:List[dict]=None,database_config:dict=None,redis_hash_config=None):
         """
         Parameters:
         onesignal_credentials : List[dict], optional
@@ -58,20 +59,30 @@ class BytesViewNotificationClient:
         if database_config:
             BytesViewNotificationClient._database_config=database_config
             
-        self.redis_config=redis_config
-    def set_notification_queue(self, queue_name:str,default_timeout:int=900,
-                         result_ttl:int=300, ttl:int=2400, failure_ttl:int=1296000):
+        BytesViewNotificationClient._redis_hash_config = redis_hash_config
+        
+    def set_notification_queue(self, queue_name: str, notification_redis_config: dict = None, default_timeout: int = 900,
+                       result_ttl: int = 300, ttl: int = 2400, failure_ttl: int = 1296000):
+        """
+        Registers a new queue for managing notifications.
+        Each queue can have  own Redis configuration.
+        Registered Queue can be used to enqueue notification tasks
+        Example:
+             client = BytesViewNotificationClient()
+             client.set_notification_queue("notifications", {"host": "localhost", "port": 6379,"db":1}, default_timeout=600)
+        """
         try:
-            BytesViewNotificationClient._queue_instance = notification_queue(queue_name=queue_name, host=self.redis_config.get('host'), 
-                                                                             port=self.redis_config.get('port',6379), 
-                                                                             db=self.redis_config.get('db',1),
-                                                                             password=self.redis_config.get('password',None), default_timeout=default_timeout
-                                                                             )
-            self.result_ttl = result_ttl
-            self.ttl = ttl
-            self.failure_ttl = failure_ttl
-        except:
-            raise
+            jobs_config = notification_redis_config or { "host": "127.0.0.1", "port": 6379, "db": 0,"password": None }
+            queue = notification_queue(queue_name=queue_name,
+                host=jobs_config.get("host"),port=jobs_config.get("port", 6379),
+                db=jobs_config.get("db", 0), password=jobs_config.get("password"),
+                default_timeout=default_timeout
+            )
+            BytesViewNotificationClient._queues[queue_name] = {
+                "queue": queue,"result_ttl": result_ttl,"ttl": ttl, "failure_ttl": failure_ttl
+            }
+        except Exception as e:
+            raise RuntimeError(f"Failed to register queue '{queue_name}': {e}")
     
     def _prepare_messages(self,messages:List[dict])->List:
         processed_messages = []
@@ -155,7 +166,7 @@ class BytesViewNotificationClient:
                                         fcm_credential=BytesViewNotificationClient._fcm_credential[app_name],
                                         onesignal_credential=BytesViewNotificationClient._onesignal_credential[app_name],
                                         database_config=self._database_config,
-                                        redis_config=self.redis_config,
+                                        redis_config=BytesViewNotificationClient._redis_hash_config,
                                         update_invalid_tokens=update_invalid_tokens,
                                         )
        
@@ -184,26 +195,42 @@ class BytesViewNotificationClient:
             )
             fcm_list.append(fcm_message)
     
-    def enqueue_messages(self,app_name,messages,update_invalid_tokens=False):
+
+    def enqueue_messages(self, app_name: str, messages: list, queue_name: str, update_invalid_tokens: bool = False):
         """
-         Parameters:
-            - app_name (str): application sending notification.
-            - messages (list of dict): for tracking notification data object required follwing keys:
-                        -'u_id': User ID of the notification recipient.
-                        -'device': Device Id
-                        -'category': Category ID for tracking purposes. Must be digit
-            Any missing keys will result in null values for those columns in tracking.
-            - update_invalid_tokens (bool, optional): Whether to update invalid tokens if found. 
-            Defaults to False.
+        Parameters:
+        - app_name (str): application sending notification.
+        - messages (list of dict): for tracking notification data object required follwing keys:
+                    -'u_id': User ID of the notification recipient.
+                    -'device': Device Id
+                    -'category': Category ID for tracking purposes. Must be digit
+        Any missing keys will result in null values for those columns in tracking.
+        - update_invalid_tokens (bool, optional): Whether to update invalid tokens if found. 
+        Defaults to False.
         """
         try:
-            if BytesViewNotificationClient._queue_instance:
-                BytesViewNotificationClient._queue_instance.enqueue(self.send_notification_by_queue,args=(app_name,messages,BytesViewNotificationClient._fcm_credential[app_name],BytesViewNotificationClient._onesignal_credential[app_name],BytesViewNotificationClient._database_config,BytesViewNotificationClient.redis_config,update_invalid_tokens), result_ttl=self.result_ttl, ttl=self.ttl, failure_ttl=self.failure_ttl) 
-            else:
-                raise ValueError("queue not configured")
-            return {'status':'success'}
+            if queue_name not in BytesViewNotificationClient._queues:
+                raise ValueError(f"Queue '{queue_name}' is not registered.")
+
+            queue_info = BytesViewNotificationClient._queues[queue_name]
+            queue_info["queue"].enqueue(
+                self.send_notification_by_queue,
+                args=(
+                    app_name,
+                    messages,
+                    BytesViewNotificationClient._fcm_credential.get(app_name),
+                    BytesViewNotificationClient._onesignal_credential.get(app_name),
+                    BytesViewNotificationClient._database_config,
+                    BytesViewNotificationClient._redis_hash_config,
+                    update_invalid_tokens
+                ),
+                result_ttl=queue_info["result_ttl"],
+                ttl=queue_info["ttl"],
+                failure_ttl=queue_info["failure_ttl"]
+            )
+            return {'status': 'success'}
         except Exception as e:
-            raise
+            raise RuntimeError(f"Failed to enqueue messages to queue '{queue_name}': {e}")
         
     def _multicast_notification(self, app_name,tokens:list, message:dict, fcm_credential, onesignal_credential, database_config:dict,redis_config,update_invalid_tokens:bool=False):
         """method is useful when we want send same message to large audience"""
@@ -253,7 +280,7 @@ class BytesViewNotificationClient:
                                                                total_notification=len(fcm_device_tokens),
                                                                failed_to_sent=len(invalid_fcm_tokens)            
                                                                 )
-            device_with_invalid_token = [{token['user_id']:token['device_id']}for token in tokens
+            device_with_invalid_token = [{'user_id':token['user_id'],'device_id':token['device_id']}for token in tokens
                                   if (token.get('onesignal_playerid') in invalid_onesignal_tokens) or
                                   (token.get('device_token') in invalid_fcm_tokens)
                                 ]   
@@ -268,12 +295,12 @@ class BytesViewNotificationClient:
     def send_immediate_multicast_notification(self, app_name,tokens:list, message: dict,update_invalid_tokens=False):
         return self._multicast_notification(app_name=app_name,
                                             tokens=tokens,
-                                        message=message,
-                                        fcm_credential=BytesViewNotificationClient._fcm_credential[app_name],
-                                        onesignal_credential=BytesViewNotificationClient._onesignal_credential[app_name],
-                                        database_config=self._database_config,
-                                        redis_config=self.redis_config,
-                                        update_invalid_tokens=update_invalid_tokens,
+                                            message=message,
+                                            fcm_credential=BytesViewNotificationClient._fcm_credential[app_name],
+                                            onesignal_credential=BytesViewNotificationClient._onesignal_credential[app_name],
+                                            database_config=self._database_config,
+                                            redis_config=BytesViewNotificationClient._redis_hash_config,
+                                            update_invalid_tokens=update_invalid_tokens
                                         )
        
     def send_multicast_notification_by_queue(self,app_name,tokens,message,fcm_credential,onesignal_credential,database_config,redis_config,update_invalid_tokens=False):
@@ -287,19 +314,27 @@ class BytesViewNotificationClient:
                                         update_invalid_tokens=update_invalid_tokens,
                                         )
     
-    def enqueue_multicast_message(self,app_name,tokens,message,update_invalid_tokens=False):
+    def enqueue_multicast_message(self,app_name,tokens,message,queue_name:str,update_invalid_tokens=False):
         try:
-            if BytesViewNotificationClient._queue_instance:
-                BytesViewNotificationClient._queue_instance.enqueue(self.send_multicast_notification_by_queue,
-                                                                    args=(app_name,tokens,message,BytesViewNotificationClient._fcm_credential[app_name],
-                                                                          BytesViewNotificationClient._onesignal_credential[app_name],
-                                                                          BytesViewNotificationClient._database_config,BytesViewNotificationClient.redis_config,
-                                                                          update_invalid_tokens,
-                                                                          ), 
-                                                                    result_ttl=self.result_ttl, ttl=self.ttl, failure_ttl=self.failure_ttl
-                                                                    ) 
-            else:
-                raise ValueError("queue not configured")
+            if queue_name not in BytesViewNotificationClient._queues:
+                raise ValueError(f"Queue '{queue_name}' is not registered.")
+            queue_info = BytesViewNotificationClient._queues[queue_name]
+            queue_info["queue"].enqueue(
+                self.send_multicast_notification_by_queue,
+                args=(
+                    app_name,
+                    tokens,
+                    message,
+                    BytesViewNotificationClient._fcm_credential.get(app_name),
+                    BytesViewNotificationClient._onesignal_credential.get(app_name),
+                    BytesViewNotificationClient._database_config,
+                    BytesViewNotificationClient._redis_hash_config,
+                    update_invalid_tokens
+                ),
+                result_ttl=queue_info["result_ttl"],
+                ttl=queue_info["ttl"],
+                failure_ttl=queue_info["failure_ttl"]
+            )
             return {'status':'success'}
         except Exception as e:
-            raise 
+            raise RuntimeError(f"Failed to enqueue messages to queue '{queue_name}': {e}")

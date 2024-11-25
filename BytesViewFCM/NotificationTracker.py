@@ -17,29 +17,28 @@ class NotificationTracker:
         self.redis_config=redis_config
         self.redis_connecion=None
 
-    def update_invalid_tokens_in_redis(self,user_device_list):
+
+    def update_invalid_tokens_in_redis(self, user_device_list):
         try:
             user_device_map = {}
             for item in user_device_list:
-                user_device_map.setdefault(item['user_id'], []).append(item['device_id'])
+                user_device_map.setdefault(item['user_id'], set()).add(item['device_id'])
             pipeline = self.redis_connecion.pipeline()
             redis_keys = {user_id: f"user:{user_id}" for user_id in user_device_map}
-            for user_id, redis_key in redis_keys.items():
+            for redis_key in redis_keys.values():
                 pipeline.hget(redis_key, "devices")
             redis_data = pipeline.execute()
             pipeline = self.redis_connecion.pipeline()
-            for index, (user_id, devices) in enumerate(user_device_map.items()):
+            for index, (user_id, devices_to_remove) in enumerate(user_device_map.items()):
                 redis_key = redis_keys[user_id]
-                existing_data = redis_data[index]
+                existing_data = redis_data[index]               
                 if existing_data:
                     parsed_devices = json.loads(existing_data)
-                    updated = False
-                    for device in parsed_devices:
-                        if device['device_id'] in devices:
-                            device['invalid_token'] = 1
-                            updated = True
-                    if updated:
-                        pipeline.hset(redis_key, mapping={"devices": json.dumps(parsed_devices)})
+                    updated_devices = [device for device in parsed_devices if device['device_id'] not in devices_to_remove]
+                    if not updated_devices:
+                        pipeline.delete(redis_key)
+                    if len(updated_devices) != len(parsed_devices):
+                        pipeline.hset(redis_key, mapping={"devices": json.dumps(updated_devices)})
             pipeline.execute()
         except Exception as e:
             raise
@@ -55,6 +54,8 @@ class NotificationTracker:
         
     def close_connection(self):
         self.connection.close()
+        if self.redis_connecion:
+            self.redis_connecion.close()
         
     def append_notification(self,notification_data, data_obj, service_name, status,is_success,total_notifications,failed_to_sent,total_clicks):
         """Append notification data to the list."""
@@ -95,11 +96,12 @@ class NotificationTracker:
             for sublist in invalid_tokens:
                 for token in sublist:
                     if 'code' in token and token['code'] == 'NOT_FOUND':
-                        user_device_ids.append({token['data']['u_id']: token['data']['device']})
+                        user_device_ids.append({'user_id':token['data']['u_id'],'device_id':token['data']['device']})
                         device_ids.append(token['data']['device'])
         else:
             user_device_ids=device_with_invalid_tokens
-            device_ids = [list(device.values())[0] for device in device_with_invalid_tokens]
+            device_ids = [item['device_id'] for item in user_device_ids]
+
             
         if self.redis_connecion:
             self.update_invalid_tokens_in_redis(user_device_list=user_device_ids)
