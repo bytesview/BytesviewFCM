@@ -1,7 +1,7 @@
 from redis import Redis
 from rq import Queue
 
-def  get_redis_connection(host, port, db, password=None,):
+def  get_redis_connection(host, port, db, password=None):
     if password is None:
         redis_connection = Redis(
             host=host,
@@ -17,7 +17,7 @@ def  get_redis_connection(host, port, db, password=None,):
         )
     return redis_connection
 
-def notification_queue(queue_name, host, port, db, password=None, default_timeout=None):
+def notification_queue(queue_name, host, port, db, password=None, default_timeout=None)->Queue:
     redis_connection=get_redis_connection(host, port, db, password)
     notif_queue = Queue(
         queue_name,
