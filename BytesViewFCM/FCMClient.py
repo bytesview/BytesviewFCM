@@ -45,13 +45,17 @@ class FCMClient:
     
     def send_multicast(self,app_name:str,credential:json,message):
         invalid_tokens=[]
+        uninstalled_tokens=[]
         if app_name not in FCMClient._initialized_apps:
             FCMClient._initialized_apps[app_name] = firebase_admin.initialize_app(credentials.Certificate(credential))
         response = messaging.send_each_for_multicast(message, app=FCMClient._initialized_apps[app_name])
         for idx, res in enumerate(response.responses):
             if not res.success:
+                err_msg = str(res.exception)
                 invalid_tokens.append(message.tokens[idx])
-        return invalid_tokens
+                if "Requested entity was not found" in err_msg:
+                    uninstalled_tokens.append(message.tokens[idx])
+        return invalid_tokens,uninstalled_tokens
 
         
         

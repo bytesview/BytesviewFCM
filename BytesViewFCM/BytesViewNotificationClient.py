@@ -264,6 +264,7 @@ class BytesViewNotificationClient:
                 except Exception as e:
                     raise
             invalid_fcm_tokens=[]
+            uninstalled_devices_tokens=[]
             if fcm_device_tokens:
                 message['data']['uuid']=''.join(str(uuid4()).split('-'))
                 for i in range(0, len(fcm_device_tokens), 500):
@@ -275,17 +276,22 @@ class BytesViewNotificationClient:
                         data=message.get('data', None)
                     )
                 
-                    invalid_fcm_tokens.extend(self.fcm_client.send_multicast(app_name=app_name,credential=fcm_credential,message=fcm_message))
+                    invalid_tokens, uninstalled_tokens = self.fcm_client.send_multicast( app_name=app_name, credential=fcm_credential, message=fcm_message)
+                    invalid_fcm_tokens.extend(invalid_tokens)
+                    uninstalled_devices_tokens.extend(uninstalled_tokens)
                 self.notif_tracker.log_multicast_notifications(message_data=message.get('data'),service_name='fcm',
                                                                total_notification=len(fcm_device_tokens),
                                                                failed_to_sent=len(invalid_fcm_tokens)            
                                                                 )
-            device_with_invalid_token = [{'user_id':token['user_id'],'device_id':token['device_id']}for token in tokens
+            device_with_invalid_token = [{'user_id':token.get('user_id',None),'device_id':token.get('device_id',None)}for token in tokens
                                   if (token.get('onesignal_playerid') in invalid_onesignal_tokens) or
                                   (token.get('device_token') in invalid_fcm_tokens)
                                 ]   
             if device_with_invalid_token and update_invalid_tokens:
                 self.notif_tracker.update_invalid_device_tokens(device_with_invalid_tokens=device_with_invalid_token)
+
+            if uninstalled_devices_tokens and not update_invalid_tokens:
+                self.notif_tracker.update_uninstalled_tokens(tokens=uninstalled_devices_tokens)    
                     
         except Exception as e:
             raise
