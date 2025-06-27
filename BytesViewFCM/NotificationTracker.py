@@ -112,7 +112,7 @@ class NotificationTracker:
                 for i in range(0, len(device_ids), 100):
                     batch = device_ids[i:i + 100]
 
-                cursor.execute(f"""UPDATE {self.device_token_table} SET invalid_token = 1 WHERE device_id IN ({', '.join(['%s'] * len(batch))})""", batch)
+                cursor.execute(f"""UPDATE {self.device_token_table} SET invalid_token = 1,is_uninstalled = 1 WHERE id IN ({', '.join(['%s'] * len(batch))})""", batch)
                 self.connection.commit()
             except Exception as e:
                 raise
@@ -132,3 +132,29 @@ class NotificationTracker:
             raise
         finally:
             cursor.close()
+
+    def update_uninstalled_tokens(self, tokens=None):
+        """
+        Sets is_uninstalled = 1 in user_device_info for the provided tokens.
+        """
+        if not tokens:
+            return
+    
+        cursor = self.connection.cursor()
+        try:
+            for i in range(0, len(tokens), 100):
+                batch = tokens[i:i+100]
+                placeholders = ','.join(['%s'] * len(batch))
+                cursor.execute(
+                    f"""
+                    UPDATE {self.device_token_table}
+                    SET is_uninstalled = 1
+                    WHERE device_token IN ({placeholders})
+                    """,
+                    batch
+                )
+            self.connection.commit()
+        except Exception as e:
+            raise
+        finally:
+            cursor.close()        
